@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using FluentValidation;
 using FluentValidation.AspNetCore;
@@ -21,7 +22,19 @@ builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Services(services)
     .Enrich.FromLogContext());
 
-builder.Services.AddControllers();
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+    // Enums travel as names, not ordinals, in both directions.
+    //
+    // Without this, "days":["Sunday"] is rejected as unconvertible and a booking's status
+    // comes back as 0 or 1. Numbers are worse than unfriendly: they are positional, so
+    // inserting a member into an enum silently changes what every stored and transmitted
+    // value means, and no client sees an error while it happens.
+    //
+    // It also keeps one vocabulary end to end - the database stores these as strings too,
+    // so a row, a log line and a JSON body all say "Confirmed".
+    options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {

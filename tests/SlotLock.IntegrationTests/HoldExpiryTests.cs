@@ -45,7 +45,7 @@ public sealed class HoldExpiryTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.Conflict);
 
-        var problem = await response.Content.ReadFromJsonAsync<ProblemResponse>();
+        var problem = await response.Content.ReadFromJsonAsync<ProblemResponse>(TestJson.Options);
         problem!.Code.Should().Be("hold_expired");
 
         // Still held and still counted: the seat is not free until the sweeper says so.
@@ -82,7 +82,7 @@ public sealed class HoldExpiryTests : IAsyncLifetime
         var held = await client.PostAsJsonAsync(
             "/api/v1/bookings",
             new { slotId = slot, customerReference = "customer@example.com" });
-        var booking = await held.Content.ReadFromJsonAsync<BookingDto>();
+        var booking = await held.Content.ReadFromJsonAsync<BookingDto>(TestJson.Options);
 
         await client.PostAsync($"/api/v1/bookings/{booking!.Id}/confirm", content: null);
 

@@ -38,8 +38,8 @@ public sealed class IdempotencyTests : IAsyncLifetime
         first.StatusCode.Should().Be(HttpStatusCode.Created);
         second.StatusCode.Should().Be(HttpStatusCode.Created, "a replay returns the original outcome, including its status");
 
-        var firstBooking = await first.Content.ReadFromJsonAsync<BookingDto>();
-        var secondBooking = await second.Content.ReadFromJsonAsync<BookingDto>();
+        var firstBooking = await first.Content.ReadFromJsonAsync<BookingDto>(TestJson.Options);
+        var secondBooking = await second.Content.ReadFromJsonAsync<BookingDto>(TestJson.Options);
 
         secondBooking!.Id.Should().Be(firstBooking!.Id);
         second.Headers.Contains("Idempotency-Replayed").Should().BeTrue("a client should be able to tell a replay from fresh work");
@@ -89,7 +89,7 @@ public sealed class IdempotencyTests : IAsyncLifetime
 
         reused.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
 
-        var problem = await reused.Content.ReadFromJsonAsync<ProblemResponse>();
+        var problem = await reused.Content.ReadFromJsonAsync<ProblemResponse>(TestJson.Options);
         problem!.Code.Should().Be("idempotency_key_reuse");
     }
 
@@ -103,7 +103,7 @@ public sealed class IdempotencyTests : IAsyncLifetime
         var client = _fixture.Factory.CreateClient();
 
         var taken = await Post(slot, "first@example.com", Guid.NewGuid().ToString());
-        var firstBooking = await taken.Content.ReadFromJsonAsync<BookingDto>();
+        var firstBooking = await taken.Content.ReadFromJsonAsync<BookingDto>(TestJson.Options);
 
         var key = Guid.NewGuid().ToString();
         var refused = await Post(slot, "second@example.com", key);
