@@ -1,0 +1,38 @@
+<Project>
+
+  <!--
+    Settings shared by every project in the solution, so a project added later picks up
+    the same language level and analysis rules without anyone remembering to copy them.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      InvariantGlobalization is deliberately OFF. This service reasons about opening hours
+      in a resource's own time zone, so it needs the real IANA/Windows time zone database.
+      Turning invariant mode on would make TimeZoneInfo.FindSystemTimeZoneById throw for
+      every id except UTC, and the failure would only show up at run time.
+    -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      CA1848 wants every log call routed through a source-generated LoggerMessage delegate
+      to avoid boxing. That is worth it on a per-request hot path; the logging here happens
+      on state changes and background sweeps, so readability wins. Disabled on purpose
+      rather than left to pile up as noise in the build output.
+    -->
+    <NoWarn>$(NoWarn);CA1848</NoWarn>
+  </PropertyGroup>
+
+</Project>
