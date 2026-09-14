@@ -10,7 +10,7 @@ Booking systems are easy to write and hard to get right. The naive version — c
 ASP.NET Core 9  ·  EF Core 9  ·  SQL Server  ·  xUnit  ·  Serilog  ·  Prometheus
 ```
 
-**81 tests** — 60 unit, 21 integration against a real SQL Server instance.
+**85 tests** — 60 unit, 25 integration against a real SQL Server instance.
 
 ---
 
@@ -94,9 +94,16 @@ Asserted twice: what the API told each caller, **and** what the database holds a
 
 ---
 
-## Two bugs the tests caught
+## Three bugs worth keeping
 
-Both are documented in the code where they happened, because the fix is less interesting than the reason.
+Each is documented in the code where it happened, because the fix is less interesting than the reason.
+
+**JSON enums were ordinals.** `"days":["Sunday"]` — the exact call in this README — was
+rejected as unconvertible, and a booking's status came back as `0`. Every test passed: the
+unit tests never touched a serialiser, and the integration tests happened to use only
+endpoints carrying no enum. It surfaced the first time the API was driven by hand, which is
+the argument for doing that at least once. A `JsonStringEnumConverter` fixes it, and
+`JsonContractTests` now pins the wire format.
 
 **The retry budget was too small.** 60 callers, 12 seats — and only **11 seats sold**. Nothing was oversold, so the safety property held; but one caller was refused a seat that existed, because it burned five attempts in about five milliseconds while the winners were still committing. A retry budget has to outlast the queue ahead of it, not merely exist. Worse, `MaxConcurrencyAttempts` was bound from configuration and then ignored — the settings file described behaviour that was not happening.
 
@@ -114,7 +121,10 @@ dotnet ef database update --project src/SlotLock.Infrastructure --startup-projec
 dotnet run --project src/SlotLock.Api
 ```
 
-Swagger UI at `https://localhost:7043/swagger` in Development.
+`dotnet run` opens Swagger at **https://localhost:7210/swagger** (or
+`http://localhost:5101/swagger`). The database is created by the `dotnet ef database update`
+above; the API does not migrate on startup, because a service that rewrites the schema as it
+boots will eventually do so on a replica you did not mean to migrate.
 
 ### Tests
 

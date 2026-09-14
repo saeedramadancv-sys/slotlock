@@ -99,7 +99,7 @@ public sealed class OverbookingTests : IAsyncLifetime
             new { slotId = slot, customerReference = "first@example.com" });
 
         held.StatusCode.Should().Be(HttpStatusCode.Created);
-        var booking = await held.Content.ReadFromJsonAsync<BookingDto>();
+        var booking = await held.Content.ReadFromJsonAsync<BookingDto>(TestJson.Options);
 
         // Ten simultaneous cancellations of the same booking.
         var cancels = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ =>
@@ -122,7 +122,7 @@ public sealed class OverbookingTests : IAsyncLifetime
         var first = await client.PostAsJsonAsync(
             "/api/v1/bookings",
             new { slotId = slot, customerReference = "first@example.com" });
-        var booking = await first.Content.ReadFromJsonAsync<BookingDto>();
+        var booking = await first.Content.ReadFromJsonAsync<BookingDto>(TestJson.Options);
 
         var blocked = await client.PostAsJsonAsync(
             "/api/v1/bookings",
