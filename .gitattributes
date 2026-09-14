@@ -1,0 +1,13 @@
+# Normalise to LF in the repository and let Git hand out the platform's endings on checkout.
+# Without this, a file written on Windows and one written in the CI container differ by an
+# invisible byte per line, and a diff shows every line changed.
+* text=auto eol=lf
+
+*.sln    text eol=crlf
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+*.sh     text eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
