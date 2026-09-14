@@ -1,5 +1,7 @@
 # SlotLock
 
+[![CI](https://github.com/saeedramadancv-sys/slotlock/actions/workflows/ci.yml/badge.svg)](https://github.com/saeedramadancv-sys/slotlock/actions/workflows/ci.yml)
+
 A booking API built around one question: **what happens when two people want the same seat at the same moment?**
 
 Booking systems are easy to write and hard to get right. The naive version — count the bookings, and insert one more if there is room — passes every test you write by hand and oversells the moment two requests arrive together. SlotLock is the version that holds up: seats are never sold twice, retried requests never book twice, and confirmation emails are never sent for bookings that rolled back.
