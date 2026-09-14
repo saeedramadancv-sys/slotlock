@@ -1,0 +1,26 @@
+<Project>
+
+  <!-- Inherit everything from the repository root, then relax what only suits production code. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!--
+      CA1707 bans underscores in member names. Test methods are the one place where they
+      earn their keep: Confirm_after_the_hold_lapsed_is_refused reads as a sentence in a
+      failure report, which is exactly when someone is reading it. Scoped to the test
+      projects so production code keeps the rule.
+
+      CA1515 wants test classes internal; xUnit discovers public ones.
+
+      CA1711 objects to a type name ending in "Collection". xUnit's [CollectionDefinition]
+      convention is to name it after the collection it defines, and renaming it to satisfy
+      the rule would make the fixture harder to find, not easier.
+    -->
+    <NoWarn>$(NoWarn);CA1707;CA1515;CA1711</NoWarn>
+  </PropertyGroup>
+
+</Project>

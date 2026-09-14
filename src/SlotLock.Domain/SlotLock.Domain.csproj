@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The domain has no package references on purpose. Booking rules - capacity,
+    hold expiry, state transitions - are plain C# that can be unit tested without
+    a database, a clock, or a DI container.
+  -->
+
+</Project>

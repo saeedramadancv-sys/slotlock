@@ -1,0 +1,13 @@
+# Everything the build does not need. Keeping the context small is the difference between a
+# one-second upload and shipping every bin/ and obj/ folder in the tree to the daemon.
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+**/TestResults/
+.git/
+.github/
+tests/
+*.md
+!README.md
+.env

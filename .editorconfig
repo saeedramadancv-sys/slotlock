@@ -1,0 +1,36 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+indent_style = space
+trim_trailing_whitespace = true
+
+[*.{cs,csx}]
+indent_size = 4
+max_line_length = 120
+
+# File-scoped namespaces and modern language features, applied consistently rather than
+# left to whoever touched the file last.
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_prefer_braces = true:warning
+dotnet_style_prefer_conditional_expression_over_return = false:none
+
+[*.{json,yml,yaml}]
+indent_size = 2
+
+[*.{xml,csproj,props,targets}]
+indent_size = 2
+
+# ---------------------------------------------------------------------------------------
+# EF Core writes the migration files. They are a record of what was applied to real
+# databases, so they are not edited to satisfy a style rule - changing one after it has run
+# somewhere makes the file disagree with the schema it produced.
+# ---------------------------------------------------------------------------------------
+[src/SlotLock.Infrastructure/Persistence/Migrations/*.cs]
+dotnet_diagnostic.CA1861.severity = none
+dotnet_diagnostic.CA1062.severity = none
+dotnet_diagnostic.IDE0300.severity = none
+generated_code = true

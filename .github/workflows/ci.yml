@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    # The integration suite proves things about SQL Server - a rowversion concurrency token,
+    # a CHECK constraint, a unique index arbitrating an idempotency claim. Running it against
+    # a substitute would mean CI passes on a database nobody deploys to, so CI gets the real
+    # engine in a container.
+    services:
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "Str0ng!Passw0rd"
+          MSSQL_PID: Developer
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'Str0ng!Passw0rd' -Q 'SELECT 1'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 30s
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore
+
+      # Warnings are errors here but not locally. A warning that only fails the build at the
+      # last moment gets suppressed in a hurry; one that fails in CI gets fixed properly,
+      # while a developer iterating is left alone.
+      - name: Build
+        run: dotnet build --no-restore --configuration Release -warnaserror
+
+      - name: Unit tests
+        run: >-
+          dotnet test tests/SlotLock.UnitTests
+          --no-build --configuration Release
+          --logger "trx;LogFileName=unit.trx"
+          --collect:"XPlat Code Coverage"
+
+      - name: Integration tests
+        env:
+          SLOTLOCK_TEST_SQL: "Server=localhost,1433;User Id=sa;Password=Str0ng!Passw0rd;TrustServerCertificate=True"
+        run: >-
+          dotnet test tests/SlotLock.IntegrationTests
+          --no-build --configuration Release
+          --logger "trx;LogFileName=integration.trx"
+
+      - name: Publish test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: "**/TestResults/*.trx"
+          if-no-files-found: ignore
+
+  # The migrations are the schema that reaches production, so a model change that nobody
+  # generated a migration for should fail here rather than at deployment time.
+  migrations-are-current:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Install dotnet-ef
+        run: dotnet tool install --global dotnet-ef --version 9.0.0
+
+      - name: Check for model changes without a migration
+        env:
+          ConnectionStrings__SlotLock: "Server=unused;Database=unused;Trusted_Connection=True;TrustServerCertificate=True"
+        run: |
+          dotnet ef migrations has-pending-model-changes \
+            --project src/SlotLock.Infrastructure \
+            --startup-project src/SlotLock.Api \
+            && echo "Model matches the migrations."

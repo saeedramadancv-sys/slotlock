@@ -1,0 +1,37 @@
+## Build output
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+artifacts/
+*.binlog
+
+## Visual Studio / Rider / VS Code
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vscode/*
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+## Test results
+[Tt]est[Rr]esult*/
+coverage/
+*.coverage
+*.trx
+*.cobertura.xml
+
+## Secrets - connection strings and signing keys live in user-secrets or the
+## environment, never in the repository.
+appsettings.*.local.json
+*.env
+.env
+!.env.example
+
+## OS noise
+.DS_Store
+Thumbs.db

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SlotLock.Domain\SlotLock.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The backoff schedule is internal: it is an implementation detail of the retry policy,
+      not something callers should depend on. It still needs asserting, because a schedule
+      that is silently too short costs sold seats - so the test project sees it, and nothing
+      else does.
+    -->
+    <InternalsVisibleTo Include="SlotLock.UnitTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" Version="11.11.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="9.0.0" />
+  </ItemGroup>
+
+</Project>
