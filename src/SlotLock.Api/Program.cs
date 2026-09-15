@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
@@ -70,6 +71,25 @@ builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<SlotLockDbContext>("database", tags: ["ready"]);
 
+// Behind App Service every request arrives from the platform's front end, so
+// RemoteIpAddress is the proxy unless the forwarded headers are read back. Without this the
+// per-IP rate limiter below silently becomes a single global bucket that every caller shares
+// - it still returns 429s, so it looks like it is working.
+//
+// ForwardLimit stays at its default of 1, meaning only the last entry in X-Forwarded-For is
+// trusted. That entry is the one App Service appends, so a client cannot pick its own
+// partition by sending the header itself.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+
+    // The App Service front end is not in a range this process can enumerate, and it is the
+    // only thing that can reach the container, so the allow-lists are cleared rather than
+    // populated with addresses that would need maintaining.
+    options.KnownNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -89,15 +109,27 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
+// First in the pipeline: everything downstream that reads the client IP or the scheme -
+// the rate limiter, the request log - needs the real values, not the proxy's.
+app.UseForwardedHeaders();
+
 app.UseExceptionHandler();
 app.UseSerilogRequestLogging();
 app.UseRateLimiter();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI(o => o.DocumentTitle = "SlotLock API");
-}
+// Swagger is served in every environment, including the public deployment.
+//
+// The usual reason to hide it is that the documentation describes endpoints an attacker
+// should have to discover. That argument does not apply here: this is a portfolio service
+// whose entire purpose is that someone can open the URL and exercise the API, and the same
+// document is already published in the repository's README. Authorisation - the rate limiter
+// and, in a real deployment, authentication - is what protects the endpoints; hiding their
+// names is not.
+app.UseSwagger();
+app.UseSwaggerUI(o => o.DocumentTitle = "SlotLock API");
+
+// A bare hostname should land somewhere useful rather than on a 404.
+app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 
 // Counts and latencies per endpoint, for Prometheus to scrape at /metrics. Booking is a
 // domain where the interesting signal is the ratio of 201s to 409s under load, and that is

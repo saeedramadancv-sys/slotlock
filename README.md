@@ -142,6 +142,28 @@ There is no in-memory provider here on purpose. Everything the suite exists to p
 
 ---
 
+## Deploying it
+
+`infra/` holds a Bicep template and a script that provisions the whole thing and pushes a
+build to it:
+
+```powershell
+az login
+./infra/deploy.ps1 -ResourceGroup slotlock-rg -Location westeurope
+```
+
+It creates an App Service on the free tier and an Azure SQL database on the free serverless
+offer. Both sleep when idle, so the first request after a quiet spell pays for the wake-up.
+
+**There is no administrator password anywhere in it.** The SQL server is created with
+Entra-only authentication, the web app connects as its own managed identity, and the
+connection string in the site's configuration therefore holds nothing worth stealing. The
+application is granted `db_datareader` and `db_datawriter` and nothing else: it does not own
+the schema, so migrations are applied by a person, and an application that was somehow
+compromised still could not drop the CHECK constraint protecting it from overselling.
+
+---
+
 ## API
 
 ```http
@@ -193,6 +215,9 @@ src/
 tests/
   SlotLock.UnitTests        rules and arithmetic, in memory
   SlotLock.IntegrationTests real HTTP, real SQL Server, real concurrency
+infra/
+  main.bicep                App Service, Azure SQL, managed identity
+  deploy.ps1                provision, migrate, publish
 ```
 
 Dependencies point inward. The domain has no package references at all, which is what lets the booking rules be tested without a database, a clock, or a DI container — and what makes it obvious when a rule has leaked into a controller.
