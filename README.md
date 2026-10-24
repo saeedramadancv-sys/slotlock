@@ -2,15 +2,15 @@
 
 [![CI](https://github.com/saeedramadancv-sys/slotlock/actions/workflows/ci.yml/badge.svg)](https://github.com/saeedramadancv-sys/slotlock/actions/workflows/ci.yml)
 
-A booking API built around one question: **what happens when two people want the same seat at the same moment?**
+A booking API I built around one question: what happens when two people want the same seat at the same moment?
 
-Booking systems are easy to write and hard to get right. The naive version — count the bookings, and insert one more if there is room — passes every test you write by hand and oversells the moment two requests arrive together. SlotLock is the version that holds up: seats are never sold twice, retried requests never book twice, and confirmation emails are never sent for bookings that rolled back.
+The simple version of a booking system counts the bookings and inserts one more if there's room. It passes every test you write by hand, and it oversells the first time two requests arrive together. SlotLock is my attempt at a version that doesn't. A seat can't be sold twice, a retried request can't book twice, and a booking that rolled back never sends a notification.
 
 ```
 ASP.NET Core 9  ·  EF Core 9  ·  SQL Server  ·  xUnit  ·  Serilog  ·  Prometheus
 ```
 
-**85 tests** — 60 unit, 25 integration against a real SQL Server instance.
+85 tests: 60 unit tests and 25 integration tests against a real SQL Server.
 
 ---
 
@@ -28,41 +28,41 @@ read slot: 0 of 1 taken
 write booking                      write booking
 ```
 
-Neither request did anything wrong. The slot is oversold by the *interleaving*, and no line of code is at fault — which is why it survives code review and shows up in production.
+Neither request did anything wrong on its own. The oversell comes from the timing, so no single line of code looks guilty. That's why this kind of bug gets through code review.
 
-## The defence
+## How SlotLock prevents it
 
-Three layers, each one catching what the layer above it missed.
+There are three layers, and each one catches what the one before it might miss.
 
-### 1. The decision and the write are the same operation
+### 1. Checking and writing happen in one step
 
-The seat count lives on the slot row as `ReservedCount`, not in a `COUNT(*)` over bookings. There is no window between checking and acting, because there is no separate check.
+The seat count is stored on the slot row as `ReservedCount` instead of being worked out with a `COUNT(*)` over bookings. Since there's no separate "check" query, there's no gap between checking and writing.
 
-### 2. A concurrency token on that row
+### 2. A concurrency token on the slot row
 
-`Slots.RowVersion` is a SQL Server `rowversion`. EF Core maps it as a concurrency token, so the update is emitted as:
+`Slots.RowVersion` is a SQL Server `rowversion`. EF Core treats it as a concurrency token, so the update it sends looks like this:
 
 ```sql
 UPDATE Slots SET ReservedCount = 1
 WHERE Id = @id AND RowVersion = @versionThatWasRead
 ```
 
-A write built on state somebody else has already changed matches **zero rows**. EF raises `DbUpdateConcurrencyException`, the loser reloads and tries again — and usually wins on the retry, because the seat was genuinely free.
+If someone else changed the row after it was read, this matches zero rows. EF throws `DbUpdateConcurrencyException`, and the request reloads the slot and tries again. Usually it succeeds on the retry, because the seat really was free.
 
-### 3. A CHECK constraint in the schema
+### 3. A CHECK constraint in the database
 
 ```sql
 CONSTRAINT CK_Slots_ReservedWithinCapacity
     CHECK (ReservedCount >= 0 AND ReservedCount <= Capacity)
 ```
 
-Layers 1 and 2 should make this unreachable. It is there because *should* is not a guarantee: if the application logic is ever wrong, the transaction fails instead of the slot overselling.
+Layers 1 and 2 should already make an oversell impossible. This is here in case my application code is ever wrong: the transaction fails instead of the slot being oversold.
 
-**No pessimistic locking.** Holding a row lock across a request serialises every booking on a resource and turns a popular slot into a queue. The optimistic path lets uncontended bookings run in parallel and pays a retry only when there is an actual race.
+I didn't use pessimistic locking. Holding a row lock for the length of a request would line up every booking for a resource one behind the other. With the optimistic approach, bookings that don't clash run in parallel, and only real races pay for a retry.
 
-### The proof
+### Testing it
 
-`tests/SlotLock.IntegrationTests/OverbookingTests.cs` — 50 simultaneous HTTP requests, one seat:
+`tests/SlotLock.IntegrationTests/OverbookingTests.cs` sends 50 HTTP requests for one seat at the same time:
 
 ```
 created    == 1
@@ -70,50 +70,45 @@ conflicted == 49
 Slots.ReservedCount == 1
 ```
 
-Asserted twice: what the API told each caller, **and** what the database holds afterwards. A service can answer `201` to one caller and still have written two rows.
+The test checks two things: what the API told each caller, and what's actually in the database afterwards. An API can return `201` to one caller and still have written two rows, so checking only the responses isn't enough.
 
 ---
 
 ## What else is in here
 
-| Concern | How it is handled |
+| Feature | How it works |
 |---|---|
-| **Holds** | A booking starts `Held` with a deadline, so a seat can be taken off sale during checkout without being lost if the customer walks away. |
-| **Idempotency** | `Idempotency-Key` on `POST /bookings`. The key is claimed by an INSERT under a unique index *before* the work runs, so two simultaneous retries cannot both book. |
-| **Transactional outbox** | The booking and its notification are written by the same `SaveChanges`. A separate dispatcher delivers with exponential backoff and dead-letters what will never succeed. |
-| **Hold sweeper** | Reclaims lapsed holds on a timer — and is deliberately *not* part of the correctness argument. |
-| **Time zones** | Opening hours are local wall-clock times. Slots that fall in a daylight-saving gap are skipped; repeated hours resolve to exactly one slot. |
-| **Observability** | Serilog structured logs, `/health/live` and `/health/ready`, Prometheus metrics at `/metrics`. |
-| **Errors** | RFC 9457 problem responses with a stable machine-readable `code`. |
+| Holds | A booking starts as `Held` with a deadline. The seat is off sale during checkout, but it comes back if the customer walks away. |
+| Idempotency | `POST /bookings` accepts an `Idempotency-Key`. The key is inserted under a unique index *before* any work runs, so two retries arriving together can't both book. |
+| Transactional outbox | The booking and its notification message are saved in the same `SaveChanges`. A separate dispatcher delivers the messages with exponential backoff and dead-letters the ones that keep failing. (For now the delivery handler only logs the message; no email is sent.) |
+| Hold sweeper | A timer clears expired holds. Correctness doesn't depend on it running on time (see below). |
+| Time zones | Opening hours are in local time. Slots that fall in a daylight-saving gap are skipped, and a repeated hour produces exactly one slot. |
+| Observability | Serilog structured logs, `/health/live` and `/health/ready`, and Prometheus metrics at `/metrics`. |
+| Errors | RFC 9457 problem responses with a stable `code` field that clients can rely on. |
 
-### Two design decisions worth stating
+### Two decisions I made on purpose
 
-**Holds count against capacity.** A seat being paid for is not available. Treating it as available is exactly how a system sells the same seat twice during checkout.
+Holds count against capacity. A seat someone is paying for isn't available, and treating it as available is exactly how a system sells the same seat twice during checkout.
 
-**A lapsed hold can never be confirmed, regardless of whether the sweeper has run.** `Booking.Confirm` checks the deadline itself. If confirmation depended on a background job having fired, the outcome would change with how loaded the server was — and correctness that degrades under load is not correctness.
+An expired hold can never be confirmed, whether or not the sweeper has run. `Booking.Confirm` checks the deadline itself. If confirming depended on a background job running on time, the result would change with how busy the server was.
 
 ---
 
-## Three bugs worth keeping
+## Three bugs the tests (and I) caught
 
-Each is documented in the code where it happened, because the fix is less interesting than the reason.
+Each one is also explained in a comment next to the fix, because why it happened is more useful than the fix itself.
 
-**JSON enums were ordinals.** `"days":["Sunday"]` — the exact call in this README — was
-rejected as unconvertible, and a booking's status came back as `0`. Every test passed: the
-unit tests never touched a serialiser, and the integration tests happened to use only
-endpoints carrying no enum. It surfaced the first time the API was driven by hand, which is
-the argument for doing that at least once. A `JsonStringEnumConverter` fixes it, and
-`JsonContractTests` now pins the wire format.
+**Enums were sent as numbers.** `"days":["Sunday"]`, the exact request in this README, was rejected, and a booking's status came back as `0`. Every test passed anyway: the unit tests never touched JSON, and the integration tests happened to only call endpoints without enums. I found it the first time I called the API by hand. A `JsonStringEnumConverter` fixed it, and `JsonContractTests` now locks the format in.
 
-**The retry budget was too small.** 60 callers, 12 seats — and only **11 seats sold**. Nothing was oversold, so the safety property held; but one caller was refused a seat that existed, because it burned five attempts in about five milliseconds while the winners were still committing. A retry budget has to outlast the queue ahead of it, not merely exist. Worse, `MaxConcurrencyAttempts` was bound from configuration and then ignored — the settings file described behaviour that was not happening.
+**The retry limit was too low.** 60 callers, 12 seats, and only 11 seats were sold. Nothing was oversold, so the important rule held, but one caller was turned away from a seat that existed. It used up five attempts in about five milliseconds while the winning requests were still committing. On top of that, `MaxConcurrencyAttempts` was read from configuration and then never used, so the settings file described behaviour that wasn't happening.
 
-**`"24:00:00"` is twenty-four days, not twenty-four hours.** `TimeSpan` reads a leading number above 23 as a day count, so a one-line appsettings entry set idempotency retention to 24 days. `ValidateDataAnnotations().ValidateOnStart()` caught it at boot — but only because a bound was declared. Both the trap and the bound are pinned by tests now.
+**`"24:00:00"` means 24 days, not 24 hours.** `TimeSpan` reads a first number above 23 as days, so one line in appsettings set idempotency retention to 24 days. `ValidateDataAnnotations().ValidateOnStart()` caught it at startup, but only because I had declared a range for that setting. Both the trap and the range are covered by tests now.
 
 ---
 
 ## Running it
 
-**Needs:** .NET 9 SDK, and SQL Server (Express, LocalDB, or a container).
+You need the .NET 9 SDK and a SQL Server (Express, LocalDB or a container).
 
 ```bash
 dotnet tool install --global dotnet-ef
@@ -121,10 +116,7 @@ dotnet ef database update --project src/SlotLock.Infrastructure --startup-projec
 dotnet run --project src/SlotLock.Api
 ```
 
-`dotnet run` opens Swagger at **https://localhost:7210/swagger** (or
-`http://localhost:5101/swagger`). The database is created by the `dotnet ef database update`
-above; the API does not migrate on startup, because a service that rewrites the schema as it
-boots will eventually do so on a replica you did not mean to migrate.
+`dotnet run` serves Swagger at **http://localhost:5101/swagger** (or https://localhost:7210/swagger with the `https` profile). The `dotnet ef database update` step above creates the database. The API doesn't run migrations on startup, because a service that changes the schema whenever it boots will eventually do it on a server where you didn't want it to.
 
 ### Tests
 
@@ -132,35 +124,28 @@ boots will eventually do so on a replica you did not mean to migrate.
 dotnet test
 ```
 
-The integration suite needs a reachable SQL Server; it creates and migrates `SlotLock_Tests` itself. Point it elsewhere with:
+The integration tests need a SQL Server they can reach. They create and migrate a `SlotLock_Tests` database themselves. To point them at a different server:
 
 ```bash
-SLOTLOCK_TEST_SQL="Server=localhost;User Id=sa;Password=...;TrustServerCertificate=True"
+export SLOTLOCK_TEST_SQL="Server=localhost;User Id=sa;Password=...;TrustServerCertificate=True"
 ```
 
-There is no in-memory provider here on purpose. Everything the suite exists to prove — the concurrency token, the CHECK constraint, the unique index — is a database feature the in-memory provider does not implement. A suite built on it would pass while the deployed service overbooked.
+I don't use EF Core's in-memory provider here. The things these tests exist to check (the concurrency token, the CHECK constraint, the unique index) are database features the in-memory provider doesn't have, so tests built on it would pass while the real service oversold.
 
 ---
 
 ## Deploying it
 
-`infra/` holds a Bicep template and a script that provisions the whole thing and pushes a
-build to it:
+`infra/` has a Bicep template and a script that create everything on Azure and push a build to it:
 
 ```powershell
 az login
 ./infra/deploy.ps1 -ResourceGroup slotlock-rg -Location westeurope
 ```
 
-It creates an App Service on the free tier and an Azure SQL database on the free serverless
-offer. Both sleep when idle, so the first request after a quiet spell pays for the wake-up.
+It creates an App Service on the free tier and an Azure SQL database on the free serverless offer. Both go to sleep when idle, so the first request after a quiet period is slow.
 
-**There is no administrator password anywhere in it.** The SQL server is created with
-Entra-only authentication, the web app connects as its own managed identity, and the
-connection string in the site's configuration therefore holds nothing worth stealing. The
-application is granted `db_datareader` and `db_datawriter` and nothing else: it does not own
-the schema, so migrations are applied by a person, and an application that was somehow
-compromised still could not drop the CHECK constraint protecting it from overselling.
+There's no admin password anywhere in it. The SQL server uses Entra-only authentication, the web app connects with its own managed identity, and so the connection string in the app's settings has nothing worth stealing. The app only gets `db_datareader` and `db_datawriter`. It doesn't own the schema, so a person applies migrations, and even a compromised app couldn't drop the CHECK constraint that stops overselling.
 
 ---
 
@@ -168,6 +153,7 @@ compromised still could not drop the CHECK constraint protecting it from oversel
 
 ```http
 POST   /api/v1/resources                      create a bookable resource
+GET    /api/v1/resources                      list resources
 POST   /api/v1/resources/{id}/slots           generate slots from local opening hours
 GET    /api/v1/resources/{id}/availability     what is free between two instants
 
@@ -177,7 +163,9 @@ DELETE /api/v1/bookings/{id}                  release it
 GET    /api/v1/bookings/{id}
 ```
 
-### A booking, end to end
+### A booking, start to finish
+
+Use dates in the future: the API won't let you hold a slot that has already started.
 
 ```bash
 # 1. A resource, in its own time zone
@@ -185,14 +173,14 @@ curl -X POST localhost:5101/api/v1/resources \
   -H 'Content-Type: application/json' \
   -d '{"name":"Dr. Haddad","timeZoneId":"Asia/Amman","defaultCapacity":1}'
 
-# 2. Slots for a working week - Sunday to Thursday, 09:00-17:00 local, 30 minutes each
+# 2. Slots for a working week: Sunday to Thursday, 09:00-17:00 local, 30 minutes each
 curl -X POST localhost:5101/api/v1/resources/{id}/slots \
   -H 'Content-Type: application/json' \
-  -d '{"fromDate":"2026-10-04","toDate":"2026-10-08",
+  -d '{"fromDate":"2027-01-03","toDate":"2027-01-07",
        "dailyStart":"09:00","dailyEnd":"17:00","slotMinutes":30,
        "days":["Sunday","Monday","Tuesday","Wednesday","Thursday"]}'
 
-# 3. Hold a seat - the key makes the request safe to retry
+# 3. Hold a seat (the key makes the request safe to retry)
 curl -X POST localhost:5101/api/v1/bookings \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: 6f1c2b9a-...' \
@@ -220,4 +208,4 @@ infra/
   deploy.ps1                provision, migrate, publish
 ```
 
-Dependencies point inward. The domain has no package references at all, which is what lets the booking rules be tested without a database, a clock, or a DI container — and what makes it obvious when a rule has leaked into a controller.
+Dependencies point inward. The domain project has no package references at all, so the booking rules can be tested without a database, a clock or a DI container, and it's easy to spot when a rule has crept into a controller.
