@@ -98,6 +98,12 @@ public sealed class HoldSweeper
 
                 foreach (var booking in lapsed)
                 {
+                    // Slot first, then the booking again, for the same reason as in
+                    // BookingService.CancelAsync: a booking read before the slot can still
+                    // look held after a cancellation has already returned its seat.
+                    var slot = await _slots.FindAsync(booking.SlotId, ct).ConfigureAwait(false);
+                    await _bookings.ReloadAsync(booking, ct).ConfigureAwait(false);
+
                     if (!booking.Expire(now))
                     {
                         // Confirmed or cancelled between the query and now. Not an error:
@@ -105,7 +111,6 @@ public sealed class HoldSweeper
                         continue;
                     }
 
-                    var slot = await _slots.FindAsync(booking.SlotId, ct).ConfigureAwait(false);
                     slot?.Release();
                     reclaimed++;
 

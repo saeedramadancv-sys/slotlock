@@ -215,6 +215,15 @@ public sealed class BookingService
                 var slot = await _slots.FindAsync(booking.SlotId, ct).ConfigureAwait(false)
                     ?? throw new NotFoundException(nameof(Slot), booking.SlotId);
 
+                // Read the booking again now that the slot is loaded. A cancellation that
+                // commits between the two reads would otherwise leave this request with a
+                // booking that still looks held and a slot whose seat is already back, and
+                // it would try to release that seat a second time. Re-reading after the slot
+                // means the booking is never older than the slot: either it shows the other
+                // cancellation (nothing to do), or the slot is stale too and its rowversion
+                // turns our write into a retry.
+                await _bookings.ReloadAsync(booking, ct).ConfigureAwait(false);
+
                 // Cancel reports whether it actually changed anything. Releasing a seat for an
                 // already-cancelled booking would hand out capacity that was never taken -
                 // overselling by way of a double refund.

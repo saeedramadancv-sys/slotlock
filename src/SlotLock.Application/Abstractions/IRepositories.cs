@@ -57,6 +57,12 @@ public interface IBookingRepository
     Task<Booking?> FindAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Re-reads a booking that is already loaded, so its state is at least as fresh as rows
+    /// read after it.
+    /// </summary>
+    Task ReloadAsync(Booking booking, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Held bookings whose hold window has passed, oldest first, capped at
     /// <paramref name="batchSize"/>.
     /// </summary>

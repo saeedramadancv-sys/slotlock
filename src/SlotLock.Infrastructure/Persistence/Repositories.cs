@@ -90,6 +90,9 @@ public sealed class BookingRepository : IBookingRepository
     public Task<Booking?> FindAsync(Guid id, CancellationToken cancellationToken = default) =>
         _context.Bookings.FirstOrDefaultAsync(b => b.Id == id, cancellationToken);
 
+    public Task ReloadAsync(Booking booking, CancellationToken cancellationToken = default) =>
+        _context.Entry(booking).ReloadAsync(cancellationToken);
+
     public async Task<IReadOnlyList<Booking>> ListLapsedHoldsAsync(
         DateTimeOffset nowUtc,
         int batchSize,
