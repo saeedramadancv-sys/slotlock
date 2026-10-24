@@ -35,8 +35,11 @@ WORKDIR /app
 #
 # It is also why the Alpine image is not used here: it ships without ICU, and globalisation
 # would have to be disabled, which breaks the same lookups.
+#
+# curl is for the HEALTHCHECK below. The aspnet image doesn't include it, and without it
+# the check could never pass, so the container was reported unhealthy forever.
 RUN apt-get update \
-    && apt-get install --yes --no-install-recommends tzdata \
+    && apt-get install --yes --no-install-recommends tzdata curl \
     && rm --recursive --force /var/lib/apt/lists/*
 
 # Non-root. Nothing here needs to write to the filesystem, and a container that cannot

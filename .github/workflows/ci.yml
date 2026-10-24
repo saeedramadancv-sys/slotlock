@@ -70,6 +70,19 @@ jobs:
           path: "**/TestResults/*.trx"
           if-no-files-found: ignore
 
+  # Builds the image so a broken Dockerfile fails here instead of at deployment, and checks
+  # that the tool the HEALTHCHECK relies on is actually in the runtime image.
+  docker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build --tag slotlock:ci .
+
+      - name: HEALTHCHECK tool is present
+        run: docker run --rm --entrypoint curl slotlock:ci --version
+
   # The migrations are the schema that reaches production, so a model change that nobody
   # generated a migration for should fail here rather than at deployment time.
   migrations-are-current:
