@@ -181,25 +181,25 @@ GET    /api/v1/bookings/{id}
 
 ```bash
 # 1. A resource, in its own time zone
-curl -X POST localhost:5000/api/v1/resources \
+curl -X POST localhost:5101/api/v1/resources \
   -H 'Content-Type: application/json' \
   -d '{"name":"Dr. Haddad","timeZoneId":"Asia/Amman","defaultCapacity":1}'
 
 # 2. Slots for a working week - Sunday to Thursday, 09:00-17:00 local, 30 minutes each
-curl -X POST localhost:5000/api/v1/resources/{id}/slots \
+curl -X POST localhost:5101/api/v1/resources/{id}/slots \
   -H 'Content-Type: application/json' \
   -d '{"fromDate":"2026-10-04","toDate":"2026-10-08",
        "dailyStart":"09:00","dailyEnd":"17:00","slotMinutes":30,
        "days":["Sunday","Monday","Tuesday","Wednesday","Thursday"]}'
 
 # 3. Hold a seat - the key makes the request safe to retry
-curl -X POST localhost:5000/api/v1/bookings \
+curl -X POST localhost:5101/api/v1/bookings \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: 6f1c2b9a-...' \
   -d '{"slotId":"{slotId}","customerReference":"saeed@example.com"}'
 
 # 4. Confirm before the hold expires
-curl -X POST localhost:5000/api/v1/bookings/{bookingId}/confirm
+curl -X POST localhost:5101/api/v1/bookings/{bookingId}/confirm
 ```
 
 ---
