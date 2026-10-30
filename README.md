@@ -70,6 +70,13 @@ conflicted == 49
 Slots.ReservedCount == 1
 ```
 
+Here's the result from [a CI run](https://github.com/saeedramadancv-sys/slotlock/actions/runs/40068774482) against a real SQL Server:
+
+```
+Passed!  - Failed:     0, Passed:    60, Skipped:     0, Total:    60 - SlotLock.UnitTests.dll (net9.0)
+Passed!  - Failed:     0, Passed:    25, Skipped:     0, Total:    25 - SlotLock.IntegrationTests.dll (net9.0)
+```
+
 The test checks two things: what the API told each caller, and what's actually in the database afterwards. An API can return `201` to one caller and still have written two rows, so checking only the responses isn't enough.
 
 ---
